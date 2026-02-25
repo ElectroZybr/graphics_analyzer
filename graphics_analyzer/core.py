@@ -2,7 +2,6 @@ import re
 import pyqtgraph as pg
 import numpy as np
 from pyqtgraph import GraphicsLayoutWidget
-import threading
 
 class Canvas:
     funcs = []
@@ -144,14 +143,6 @@ class Canvas:
                 return
     
     def update_point(self, pt, x, y):
-        # a: pg.PlotDataItem = self.plot.plot(
-        #     [x], [y],
-        #     symbol='o',
-        #     symbolSize=10,
-        #     symbolBrush='w',
-        #     symbolPen=None
-        # )
-        # a.setData
         for i, f in enumerate(self.lines):
             if f is pt:
                 self.lines[i].setData([x], [y])
@@ -170,8 +161,6 @@ class Canvas:
 
     def exec(self):
         pg.exec()
-
-# def get_mouse_pos():
 
 
 def parser(expr: str):

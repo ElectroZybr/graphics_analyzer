@@ -1,0 +1,13 @@
+pyproject.toml
+readme.md
+graphics_analyzer/__init__.py
+graphics_analyzer/core.py
+graphics_analyzer.egg-info/PKG-INFO
+graphics_analyzer.egg-info/SOURCES.txt
+graphics_analyzer.egg-info/dependency_links.txt
+graphics_analyzer.egg-info/requires.txt
+graphics_analyzer.egg-info/top_level.txt
+graphics_analyzer/examples/__init__.py
+graphics_analyzer/examples/integrator.py
+graphics_analyzer/examples/main.py
+graphics_analyzer/examples/test.py
