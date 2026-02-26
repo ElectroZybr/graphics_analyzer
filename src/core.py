@@ -31,6 +31,7 @@ class Canvas:
         self.default_pen = self.pen_pool["Lblue"]
         self.counter = 0
         self.fps = 0
+        self.last_fps = 0
 
         self._panels: list[dict] = []
         self.funcs: list[dict] = []
@@ -44,6 +45,10 @@ class Canvas:
         self.timer = pg.QtCore.QTimer()
         self.timer.timeout.connect(self.update)
         self.timer.start(16)
+
+        self._fps_timer = pg.QtCore.QTimer()
+        self._fps_timer.timeout.connect(self._refresh_fps)
+        self._fps_timer.start(1000)
 
         self.w.show()
 
@@ -109,23 +114,39 @@ class Canvas:
         if lock_aspect:
             plot.getViewBox().setAspectLocked(True)
 
-        panel = {"layout": panel_layout, "label": panel_label, "plot": plot, "max_label_len": 0}
+        info = {}
+        if len(self._panels) == 0:
+            info["FPS"] = "0"
+
+        panel = {
+            "layout": panel_layout,
+            "label": panel_label,
+            "plot": plot,
+            "max_label_len": 0,
+            "info": info,
+        }
         self._panels.append(panel)
+        self._render_panel_info(panel)
         return plot
 
     def get_plot(self, index: int = 0):
         return self._panels[index]["plot"]
 
+    def _render_panel_info(self, panel: dict):
+        text = " ".join([f"{k} {v}" for k, v in panel["info"].items()])
+        panel["max_label_len"] = max(panel["max_label_len"], len(text))
+        padded = text.ljust(panel["max_label_len"])
+        safe = html.escape(padded).replace(" ", "&nbsp;")
+        panel["label"].setText(
+            f'<span style="color:#e6e6e6; font-size:12pt; font-family:Consolas, monospace;">{safe}</span>'
+        )
+
     def set_plot_label(self, text: str, plot: pg.PlotItem | None = None):
         target = self._resolve_plot(plot)
         panel = self._panel_for_plot(target)
         if panel is not None:
-            panel["max_label_len"] = max(panel["max_label_len"], len(text))
-            padded = text.ljust(panel["max_label_len"])
-            safe = html.escape(padded).replace(" ", "&nbsp;")
-            panel["label"].setText(
-                f'<span style="color:#e6e6e6; font-size:12pt; font-family:Consolas, monospace;">{safe}</span>'
-            )
+            panel["info"]["INFO"] = text
+            self._render_panel_info(panel)
 
     def update(self):
         for item in self.funcs:
@@ -224,8 +245,16 @@ class Canvas:
         self.fps = 0
 
     def _print_fps(self):
-        print(f"FPS: {self.fps}")
+        print(f"FPS: {self.last_fps}")
+
+    def _refresh_fps(self):
+        fps_value = self.fps
+        self.last_fps = fps_value
         self.fps = 0
+        if self._panels:
+            first = self._panels[0]
+            first["info"]["FPS"] = str(fps_value)
+            self._render_panel_info(first)
 
     def set_camera_x(self, x_st=-1, x_end=1, plot: pg.PlotItem | None = None, index: int | None = None):
         vb = self._resolve_plot(plot, index).getViewBox()
@@ -246,8 +275,20 @@ class Canvas:
     #     plot.setXRange(x0 - (x1 - x0)*0.05, x1 + (x1 - x0)*0.05, padding=0)
     #     plot.setYRange(y0 - (y1 - y0)*0.50, y1 + (y1 - y0)*0.50, padding=0)
 
-    def set_info(self, text: str, plot: pg.PlotItem | None = None):
-        self.set_plot_label(text, plot=plot)
+    def set_info(self, key: str, value=None, plot: pg.PlotItem | None = None):
+        if isinstance(value, pg.PlotItem) and plot is None:
+            plot = value
+            value = None
+
+        target = self._resolve_plot(plot)
+        panel = self._panel_for_plot(target)
+        if panel is None:
+            return
+        if value is None:
+            panel["info"][""] = str(key)
+        else:
+            panel["info"][str(key)] = str(value)
+        self._render_panel_info(panel)
 
     def exec(self):
         pg.exec()
