@@ -1,6 +1,6 @@
 import threading
 import time
-import graphics_analyzer.graphics_analyzer.core as core
+import graphics_analyzer.src.core as core
 import numpy as np
 
 canvas = core.Canvas()

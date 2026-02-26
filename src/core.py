@@ -21,14 +21,19 @@ class Canvas:
     def __init__(self) -> None:
         self.app = pg.mkQApp()
         self.w: GraphicsLayoutWidget = GraphicsLayoutWidget()
-        self.w.resize(1400, 900)
+        self.w.resize(1250, 500)
         self.w.setBackground((30, 30, 30))
         self.w.setVerticalScrollBarPolicy(pg.QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.w.setHorizontalScrollBarPolicy(pg.QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        self.info_panel = self.w.addLabel("", row=0, col=0, colspan=2)
+        self.info_panel.setText('<span style="color:#e6e6e6; font-size:12pt;">Ready</span>')
+        self.w.nextRow()
         self.plot: pg.PlotItem = self.w.addPlot()
         self.w.nextCol()
         self.error_plot: pg.PlotItem = self.w.addPlot()
         self.plot.getViewBox().setAspectLocked(True)
+        self.fps = 0
 
         pg.setConfigOptions(antialias=True,)
 
@@ -56,15 +61,10 @@ class Canvas:
             
         )
 
-        # text.setFlag(text.ItemIgnoresTransformations)
-        # self.plot.addItem(text)
-        # text.setPos(2, 0)
-
-
         self.plot.addItem(x0)
         self.plot.addItem(y0)
-        self.plot.setTitle("Function")
-        self.error_plot.setTitle("Error")
+        self.plot.setTitle("Function (LJ)")
+        self.error_plot.setTitle("Energy")
         self.plot.showGrid(x=True, y=True, alpha=0.6)
         self.error_plot.showGrid(x=True, y=True, alpha=0.6)
         self.plot.getAxis('left').setStyle(autoExpandTextSpace=False, autoReduceTextSpace=False)
@@ -99,6 +99,8 @@ class Canvas:
             else:
                 self.curves[i].setData(x, y)
 
+        self.fps += 1
+
 
     def add_func(self, func: str, color: str | None = None, fr: float | None = None):
         self.funcs.append(Expr(func, fr))
@@ -126,8 +128,17 @@ class Canvas:
         self.plot.plot(np.sin(a), np.cos(a), pen=self.default_pen)
     
     def add_point(self, x, y, color='w', size=0.05):
-        self.lines.append(self.plot.plot([x], [y], pen=None, symbol='o', symbolSize=size, symbolBrush=color, symbolPen=None, pxMode=False))
-        return self.lines[-1]
+        point = pg.ScatterPlotItem(
+            [x], [y],
+            pen=None,
+            brush=color,
+            size=size,
+            pxMode=False
+        )
+        self.plot.addItem(point)
+        point.setZValue(100000)
+        self.lines.append(point)
+        return point
 
     def add_error_plot(self, color: str | None = "red"):
         pen = self.pen_pool.get(color) if color else self.default_pen
@@ -155,6 +166,34 @@ class Canvas:
         self.lines[1].setData([c, c], [0, s])
         self.lines[2].setData([0, c], [s, s])
         self.lines[3].setData([0, c], [0, s])
+
+    def log_fps(self, flag=True):
+        self.log_timer = pg.QtCore.QTimer()
+        self.log_timer.timeout.connect(self.__print_fps)
+        self.log_timer.start(1000)
+        self.fps = 0
+    
+    def __print_fps(self):
+        print(f'FPS: {self.fps}')
+        self.fps = 0
+
+    def set_camera_x(self, x_st=-1, x_end=1, gr_num=0):
+        if gr_num == 0:
+            vb = self.plot.getViewBox()
+        elif gr_num == 1:
+            vb = self.error_plot.getViewBox()
+        vb.setXRange(x_st, x_end, padding=0)
+
+    def set_camera_y(self, y_st=-1, y_end=1, gr_num=0):
+        if gr_num == 0:
+            vb = self.plot.getViewBox()
+        elif gr_num == 1:
+            vb = self.error_plot.getViewBox()
+        vb.setYRange(y_st, y_end, padding=0)
+
+    def set_info(self, text: str):
+        self.info_panel.setText(f'<span style="color:#e6e6e6; font-size:12pt;">{text}</span>')
+
 
     def draw_func(self, func):
         pass
