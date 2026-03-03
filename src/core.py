@@ -18,10 +18,16 @@ class Canvas:
         ),
     }
 
-    def __init__(self) -> None:
+    def __init__(self, width: int = 800, height: int = 600) -> None:
         self.app = pg.mkQApp()
         self.w: GraphicsLayoutWidget = GraphicsLayoutWidget()
-        self.w.resize(1250, 500)
+        self.w.resize(width, height)
+        self._base_width = width
+        self._base_height = height
+        self._panel_pad = 70
+        self._label_h = 24
+        # Square area allocated per plot panel.
+        self._panel_side = max(260, min(width, height - self._panel_pad - self._label_h))
         self.w.setBackground((30, 30, 30))
         self.w.setVerticalScrollBarPolicy(pg.QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.w.setHorizontalScrollBarPolicy(pg.QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -51,6 +57,17 @@ class Canvas:
         self._fps_timer.start(1000)
 
         self.w.show()
+
+    def _update_window_size(self):
+        # Keep each panel visually equal and close to 1:1.
+        count = max(1, len(self._panels))
+        target_h = self._panel_side + self._panel_pad + self._label_h
+        target_w = count * self._panel_side + self._panel_pad
+
+        # Do not shrink below constructor defaults.
+        target_w = max(target_w, self._base_width)
+        target_h = max(target_h, self._base_height)
+        self.w.resize(target_w, target_h)
 
     def _panel_for_plot(self, plot: pg.PlotItem):
         for panel in self._panels:
@@ -86,24 +103,9 @@ class Canvas:
         plot = panel_layout.addPlot()
         plot.setTitle(title)
         if show_grid:
-            plot.showGrid(x=True, y=True, alpha=0.6)
+            self.show_grid(True, plot)
 
-        # ось X = 0
-        x0 = pg.InfiniteLine(
-            pos=0,
-            angle=0,           # горизонтальная
-            pen=pg.mkPen((150, 150, 150), width=2)
-        )
-
-        # ось Y = 0
-        y0 = pg.InfiniteLine(
-            pos=0,
-            angle=90,          # вертикальная
-            pen=pg.mkPen((150, 150, 150), width=2)
-        )
-
-        plot.addItem(x0, ignoreBounds=True)
-        plot.addItem(y0, ignoreBounds=True)
+        self.show_axis_line(True, plot)
 
         plot.getAxis("left").setStyle(autoExpandTextSpace=False, autoReduceTextSpace=False)
         plot.getAxis("bottom").setStyle(autoExpandTextSpace=False, autoReduceTextSpace=False)
@@ -124,16 +126,60 @@ class Canvas:
             "plot": plot,
             "max_label_len": 0,
             "info": info,
+            "last_text": None,
         }
         self._panels.append(panel)
+        self._update_window_size()
         self._render_panel_info(panel)
         return plot
+    
+    def show_axis_line(self, show: bool = True, plot: pg.PlotItem | None = None):
+        '''Показать/скрыть оси X=0 и Y=0 на указанном графике (или на главном, если не указано)'''
+        target = self._resolve_plot(plot)
+        if show:
+            self.x0 = pg.InfiniteLine(
+                pos=0,
+                angle=0,           # горизонтальная
+                pen=pg.mkPen((150, 150, 150), width=2)
+            )
+            self.y0 = pg.InfiniteLine(
+                pos=0,
+                angle=90,          # вертикальная
+                pen=pg.mkPen((150, 150, 150), width=2)
+            )
+            target.addItem(self.x0, ignoreBounds=True)
+            target.addItem(self.y0, ignoreBounds=True)
+        else:
+            target.removeItem(self.x0)
+            target.removeItem(self.y0)
+    
+    def show_grid(self, show: bool = True, plot: pg.PlotItem | None = None):
+        '''Показать/скрыть сетку на указанном графике (или на главном, если не указано)'''
+        target = self._resolve_plot(plot)
+        if show:
+            target.showGrid(x=True, y=True, alpha=0.6)
+        else:
+            target.showGrid(x=False, y=False)
+
+    def show_coord_panel(
+        self,
+        show: bool = True,
+        plot: pg.PlotItem | None = None,
+    ):
+        """Show/hide coordinate axis panels on the right and bottom."""
+        target = self._resolve_plot(plot)
+
+        target.showAxis("left", show=show)
+        target.showAxis("bottom", show=show)
 
     def get_plot(self, index: int = 0):
         return self._panels[index]["plot"]
 
     def _render_panel_info(self, panel: dict):
         text = " ".join([f"{k} {v}" for k, v in panel["info"].items()])
+        if panel["last_text"] == text:
+            return
+        panel["last_text"] = text
         panel["max_label_len"] = max(panel["max_label_len"], len(text))
         padded = text.ljust(panel["max_label_len"])
         safe = html.escape(padded).replace(" ", "&nbsp;")
@@ -153,10 +199,23 @@ class Canvas:
             f = item["expr"]
             plot = item["plot"]
             curve = item["curve"]
+            last_range = item["last_range"]
+            last_version = item["last_version"]
 
             x_range, _ = plot.viewRange()  # type: ignore
+            curr_range = (x_range[0], x_range[1])
+            same_range = (
+                last_range is not None
+                and np.isclose(curr_range[0], last_range[0], rtol=1e-6, atol=1e-6)
+                and np.isclose(curr_range[1], last_range[1], rtol=1e-6, atol=1e-6)
+            )
+            if same_range and last_version == f.version:
+                continue
+
             scale = (x_range[1] - x_range[0]) * 0.5
-            x = np.linspace(x_range[0] - scale, x_range[1] + scale, 1000)
+            view_px = max(200, int(plot.getViewBox().width()))
+            samples = min(1200, max(300, view_px))
+            x = np.linspace(x_range[0] - scale, x_range[1] + scale, samples)
             y = f.fx(x)
 
             if f.render_from is not None:
@@ -164,6 +223,8 @@ class Canvas:
                 curve.setData(x[mask], y[mask])
             else:
                 curve.setData(x, y)
+            item["last_range"] = curr_range
+            item["last_version"] = f.version
 
         self.fps += 1
 
@@ -188,7 +249,17 @@ class Canvas:
             pen = self.default_pen
 
         curve = target.plot([], [], pen=pen)
-        self.funcs.append({"expr": expr, "curve": curve, "plot": target})
+        curve.setClipToView(True)
+        curve.setDownsampling(auto=True, method="peak")
+        self.funcs.append(
+            {
+                "expr": expr,
+                "curve": curve,
+                "plot": target,
+                "last_range": None,
+                "last_version": -1,
+            }
+        )
         self.series.append(curve)
         return expr
 
@@ -203,6 +274,8 @@ class Canvas:
         if not pen:
             pen = self.default_pen
         line = target.plot([], [], pen=pen)
+        line.setClipToView(True)
+        line.setDownsampling(auto=True, method="peak")
         self.series.append(line)
         return line
 
@@ -243,9 +316,6 @@ class Canvas:
         self.log_timer.timeout.connect(self._print_fps)
         self.log_timer.start(1000)
         self.fps = 0
-
-    def _print_fps(self):
-        print(f"FPS: {self.last_fps}")
 
     def _refresh_fps(self):
         fps_value = self.fps
@@ -303,6 +373,8 @@ class Expr:
     def __init__(self, expr, render_from=None):
         self.fx = lambda x: eval(expr, {"x": x, "np": np})
         self.render_from = render_from
+        self.version = 0
 
     def update_expr(self, expr):
         self.fx = lambda x: eval(expr, {"x": x, "np": np})
+        self.version += 1
